@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: mes-staging
+
+labels:
+- pairs:
+    environment: staging
+    app.kubernetes.io/instance: staging
+
+patches:
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "250m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+
+configMapGenerator:
+  - name: redis-config
+    files:
+      - redis.conf
+
+# In staging, the secret should be created externally
+# secretGenerator:
+#   - name: redis-secret
+#     behavior: replace
+#     literals:
+#       - password=<staging-password>
