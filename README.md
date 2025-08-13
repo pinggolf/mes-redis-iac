@@ -91,8 +91,9 @@ Removes Redis deployment:
 - Deletes all Kubernetes resources
 - Removes secrets from all namespaces
 - Cleans up PVCs
+- Removes Redis entries from mes-system-env ConfigMap
+- Removes Redis password from mes-system-secrets Secret
 - Optionally removes empty namespace
-- Requires confirmation (use `--force` to skip)
 
 ## Configuration
 
@@ -171,12 +172,16 @@ kubectl exec -it -n mes-{environment} redis-0 -- redis-cli -a <password> ping
 ### Cleanup
 
 ```bash
-# Remove Redis deployment with confirmation
+# Remove Redis deployment (non-interactive)
 ./clean.sh
-
-# Force removal without confirmation
-./clean.sh --force
 ```
+
+The clean script automatically:
+- Removes all Redis Kubernetes resources
+- Cleans up Redis entries from mes-system-env ConfigMap
+- Removes Redis password from mes-system-secrets Secret
+- Deletes persistent volume claims
+- Removes empty namespaces
 
 ## Secrets Management
 
