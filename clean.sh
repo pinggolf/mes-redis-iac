@@ -59,39 +59,25 @@ echo ""
 echo "Remaining resources in namespace $NAMESPACE:"
 kubectl get all -n $NAMESPACE 2>/dev/null || echo "Namespace $NAMESPACE no longer exists."
 
-# Optionally remove Redis entries from mes-system-env configmap
+# Remove Redis entries from mes-system-env configmap
 if kubectl get configmap mes-system-env &>/dev/null; then
     echo ""
-    echo "Found mes-system-env configmap. The Redis entries can be removed."
-    if [ "$1" != "--force" ]; then
-        read -p "Remove REDIS_HOST and REDIS_PORT from mes-system-env configmap? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo "Removing Redis entries from mes-system-env configmap..."
-            # Remove REDIS_HOST
-            kubectl patch configmap mes-system-env --type json -p '[{"op": "remove", "path": "/data/REDIS_HOST"}]' 2>/dev/null || {
-                echo "Warning: Could not remove REDIS_HOST from mes-system-env (it may not exist)"
-            }
-            # Remove REDIS_PORT
-            kubectl patch configmap mes-system-env --type json -p '[{"op": "remove", "path": "/data/REDIS_PORT"}]' 2>/dev/null || {
-                echo "Warning: Could not remove REDIS_PORT from mes-system-env (it may not exist)"
-            }
-        fi
-    fi
+    echo "Removing Redis entries from mes-system-env configmap..."
+    # Remove REDIS_HOST
+    kubectl patch configmap mes-system-env --type json -p '[{"op": "remove", "path": "/data/REDIS_HOST"}]' 2>/dev/null || {
+        echo "Warning: Could not remove REDIS_HOST from mes-system-env (it may not exist)"
+    }
+    # Remove REDIS_PORT
+    kubectl patch configmap mes-system-env --type json -p '[{"op": "remove", "path": "/data/REDIS_PORT"}]' 2>/dev/null || {
+        echo "Warning: Could not remove REDIS_PORT from mes-system-env (it may not exist)"
+    }
 fi
 
-# Optionally remove Redis password from mes-system-secrets
+# Remove Redis password from mes-system-secrets
 if kubectl get secret mes-system-secrets &>/dev/null; then
     echo ""
-    echo "Found mes-system-secrets. The Redis password can be removed."
-    if [ "$1" != "--force" ]; then
-        read -p "Remove REDIS_PASSWORD from mes-system-secrets? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo "Removing REDIS_PASSWORD from mes-system-secrets..."
-            kubectl patch secret mes-system-secrets --type json -p '[{"op": "remove", "path": "/data/REDIS_PASSWORD"}]' 2>/dev/null || {
-                echo "Warning: Could not remove REDIS_PASSWORD from mes-system-secrets (it may not exist)"
-            }
-        fi
-    fi
+    echo "Removing REDIS_PASSWORD from mes-system-secrets..."
+    kubectl patch secret mes-system-secrets --type json -p '[{"op": "remove", "path": "/data/REDIS_PASSWORD"}]' 2>/dev/null || {
+        echo "Warning: Could not remove REDIS_PASSWORD from mes-system-secrets (it may not exist)"
+    }
 fi
