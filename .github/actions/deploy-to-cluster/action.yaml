@@ -1,0 +1,235 @@
+name: "Deploy Redis to Cluster"
+description: "Action to deploy Redis to Kubernetes cluster using Kustomize"
+
+inputs: 
+  environment:
+    description: "The environment to deploy to (development, staging, production)"
+    required: true
+    default: 'development'
+
+outputs: {}
+
+runs:
+  using: composite
+  
+  steps:
+
+    - name: Entry Message
+      shell: bash
+      run: |
+        echo ""
+        echo "***********************************"
+        echo "** Deploy Redis to Kubernetes    **"
+        echo "***********************************"
+        echo ""
+        echo "Environment: ${{ inputs.environment }}"
+        echo "Namespace: ${{ env.NAMESPACE }}"
+
+    - name: Validate Environmental Variables
+      uses: pinggolf/is-devops/validate-variables@v3.1.0
+      env:
+        REQUIRED_VARIABLES: |
+          NAMESPACE
+          POD_NAME
+          SECRET_NAME
+
+    - name: Set Environment Variables
+      shell: bash
+      run: |
+        echo "ENVIRONMENT=${{ inputs.environment }}" >> $GITHUB_ENV
+        echo "KUSTOMIZE_DIR=manifests/overlays/${{ inputs.environment }}" >> $GITHUB_ENV
+
+    - name: Create Redis Namespace 
+      shell: bash
+      run: |
+        echo "Creating namespace ${{ env.NAMESPACE }} if it doesn't exist..."
+        kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Create Redis Secrets
+      shell: bash
+      id: create-secrets
+      run: |
+        echo ""
+        echo "Setting up Redis secrets..."
+        echo ""
+
+        # Generate secure password
+        password=$(openssl rand -hex 32)
+        echo "::add-mask::$password"
+        echo "REDIS_PASSWORD=$password" >> "$GITHUB_ENV"
+
+        # Create redis-secret in target namespace
+        echo "Creating redis-secret in namespace: ${{ env.NAMESPACE }}"
+        kubectl delete secret ${{ env.SECRET_NAME }} \
+          -n ${{ env.NAMESPACE }} \
+          --ignore-not-found
+
+        kubectl create secret generic ${{ env.SECRET_NAME }} \
+          -n ${{ env.NAMESPACE }} \
+          --from-literal=password="${password}"
+
+        # Create redis-credentials in default namespace
+        echo "Creating redis-credentials in namespace: default"
+        kubectl delete secret redis-credentials \
+          -n default \
+          --ignore-not-found
+        
+        kubectl create secret generic redis-credentials \
+          -n default \
+          --from-literal=host="redis-cluster.${{ env.NAMESPACE }}.svc.cluster.local" \
+          --from-literal=port="6379" \
+          --from-literal=password="${password}" \
+          --from-literal=provider="redis" \
+          --from-literal=type="cache"
+
+        # Create redis-credentials in mes namespace if it exists
+        if kubectl get namespace mes &>/dev/null; then
+          echo "Creating redis-credentials in namespace: mes"
+          kubectl delete secret redis-credentials \
+            -n mes \
+            --ignore-not-found
+          
+          kubectl create secret generic redis-credentials \
+            -n mes \
+            --from-literal=host="redis-cluster.${{ env.NAMESPACE }}.svc.cluster.local" \
+            --from-literal=port="6379" \
+            --from-literal=password="${password}" \
+            --from-literal=provider="redis" \
+            --from-literal=type="cache"
+        fi
+
+        echo "" 
+        echo "Restarting pods that depend on Redis secrets..."
+        kubectl rollout restart deployment --selector='restartForRedis=secrets' --namespace=default 2>/dev/null || true
+        kubectl rollout restart deployment --selector='restartForRedis=secrets' --namespace=mes 2>/dev/null || true
+
+    - name: Update mes-system ConfigMap
+      shell: bash
+      run: |
+        echo "Updating mes-system-env configmap with Redis connection details..."
+        REDIS_HOST="redis-cluster.${{ env.NAMESPACE }}.svc.cluster.local"
+        REDIS_PORT="6379"
+        
+        # Check if mes-system-env configmap exists
+        if kubectl get configmap mes-system-env &>/dev/null; then
+          echo "Found existing mes-system-env configmap, patching with Redis connection details..."
+          kubectl patch configmap mes-system-env --type merge \
+            -p "{\"data\":{\"REDIS_HOST\":\"$REDIS_HOST\",\"REDIS_PORT\":\"$REDIS_PORT\"}}" || {
+            echo "Warning: Failed to patch mes-system-env configmap"
+          }
+        else
+          echo "mes-system-env configmap not found, creating it with Redis connection details..."
+          kubectl create configmap mes-system-env \
+            --from-literal=REDIS_HOST="$REDIS_HOST" \
+            --from-literal=REDIS_PORT="$REDIS_PORT" \
+            --from-literal=ENVIRONMENT="${{ inputs.environment }}" || {
+            echo "Warning: Failed to create mes-system-env configmap"
+          }
+        fi
+
+    - name: Update mes-system-secrets
+      shell: bash
+      run: |
+        echo "Updating mes-system-secrets with Redis password..."
+        
+        # Check if mes-system-secrets exists
+        if kubectl get secret mes-system-secrets &>/dev/null; then
+          echo "Found existing mes-system-secrets, patching with Redis password..."
+          # Get current secret data
+          CURRENT_DATA=$(kubectl get secret mes-system-secrets -o json | jq -r '.data // {}')
+          # Add Redis password to the data
+          REDIS_PASSWORD_BASE64=$(echo -n "${{ env.REDIS_PASSWORD }}" | base64)
+          NEW_DATA=$(echo "$CURRENT_DATA" | jq --arg pass "$REDIS_PASSWORD_BASE64" '. + {"REDIS_PASSWORD": $pass}')
+          # Patch the secret
+          kubectl patch secret mes-system-secrets --type merge -p "{\"data\":$NEW_DATA}" || {
+            echo "Warning: Failed to patch mes-system-secrets"
+          }
+        else
+          echo "mes-system-secrets not found, creating it with Redis password..."
+          kubectl create secret generic mes-system-secrets \
+            --from-literal=REDIS_PASSWORD="${{ env.REDIS_PASSWORD }}" || {
+            echo "Warning: Failed to create mes-system-secrets"
+          }
+        fi
+
+    - name: Delete Current Resources If They Exist
+      shell: bash
+      run: |
+        echo "Checking for existing Redis deployment..."
+        
+        # Check if StatefulSet exists
+        if kubectl get statefulset redis -n ${{ env.NAMESPACE }} &>/dev/null; then
+          echo "Found existing Redis StatefulSet, deleting..."
+          kubectl delete statefulset redis -n ${{ env.NAMESPACE }} --ignore-not-found
+          
+          # Wait for pods to terminate
+          echo "Waiting for Redis pods to terminate..."
+          kubectl wait --for=delete pod -l app=redis -n ${{ env.NAMESPACE }} --timeout=60s 2>/dev/null || true
+        fi
+        
+        # Delete PVCs if they exist
+        echo "Cleaning up persistent volume claims..."
+        kubectl delete pvc -l app=redis -n ${{ env.NAMESPACE }} --ignore-not-found || true
+
+    - name: Deploy Redis using Kustomize
+      shell: bash
+      run: |
+        echo "Deploying Redis using Kustomize..."
+        echo "Applying configuration from: ${{ env.KUSTOMIZE_DIR }}"
+        
+        # Check if Kustomize directory exists
+        if [ ! -d "${{ env.KUSTOMIZE_DIR }}" ]; then
+          echo "Error: Kustomize directory not found: ${{ env.KUSTOMIZE_DIR }}"
+          exit 1
+        fi
+        
+        # Apply Kustomize configuration
+        kubectl apply -k ${{ env.KUSTOMIZE_DIR }} --namespace=${{ env.NAMESPACE }}
+        
+        echo "Redis deployment initiated"
+
+    - name: Wait for Redis to be Ready
+      shell: bash
+      run: |
+        echo ""
+        echo "Waiting for Redis StatefulSet to be ready..."
+        
+        # Wait for StatefulSet to be ready
+        kubectl wait --namespace=${{ env.NAMESPACE }} \
+          --for=condition=ready pod \
+          --selector=app=redis \
+          --timeout=300s || {
+          echo "Warning: Redis pod did not become ready in time"
+          echo "Check pod status with: kubectl get pods -n ${{ env.NAMESPACE }}"
+          kubectl describe pod -l app=redis -n ${{ env.NAMESPACE }}
+          exit 1
+        }
+        
+        echo "Redis is ready!"
+
+    - name: Verify Redis Deployment
+      shell: bash
+      run: |
+        echo ""
+        echo "Verifying Redis deployment..."
+        echo ""
+        
+        # Check StatefulSet status
+        kubectl get statefulset redis -n ${{ env.NAMESPACE }}
+        
+        # Check pods
+        kubectl get pods -l app=redis -n ${{ env.NAMESPACE }}
+        
+        # Check service
+        kubectl get service redis-cluster -n ${{ env.NAMESPACE }}
+        
+        # Test Redis connection (if possible)
+        echo ""
+        echo "Testing Redis connection..."
+        kubectl exec -n ${{ env.NAMESPACE }} redis-0 -- redis-cli -a "${{ env.REDIS_PASSWORD }}" ping || {
+          echo "Warning: Could not verify Redis connection"
+        }
+        
+        echo ""
+        echo "Redis deployment completed successfully!"
+        echo "Connection string: redis-cluster.${{ env.NAMESPACE }}.svc.cluster.local:6379"

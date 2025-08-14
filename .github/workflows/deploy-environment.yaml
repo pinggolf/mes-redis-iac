@@ -1,0 +1,48 @@
+name: Deploy Environment
+
+on:
+  workflow_call:  
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: The GitHub environment name (e.g., Staging-US, Production-EU)
+      region:
+        required: true
+        type: string
+        description: The region code (US, EU, JP, or KR)
+      overlay:
+        required: true
+        type: string
+        description: The Kustomize overlay to use (staging or production)
+
+env:
+  NAMESPACE: ${{ vars.NAMESPACE }}
+  POD_NAME: ${{ vars.POD_NAME }}
+  SECRET_NAME: ${{ vars.SECRET_NAME }}
+
+jobs:
+        
+  deploy:
+    name: Deploy to ${{ inputs.region }}
+    runs-on: [Azure-MES-Runner]
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Get Cluster Credentials
+        uses: pinggolf/is-devops/get-cluster-credentials@v3.1.0
+        env:
+          CLUSTER_NAME: ${{ vars.CLUSTER_NAME }}
+          SERVER: ${{ vars.SERVER }}
+          CERTIFICATE_AUTHORITY_DATA: ${{ secrets.CERTIFICATE_AUTHORITY_DATA }}
+          CLIENT_CERTIFICATE_DATA: ${{ secrets.CLIENT_CERTIFICATE_DATA }}
+          CLIENT_KEY_DATA: ${{ secrets.CLIENT_KEY_DATA }}
+          TOKEN: ${{ secrets.TOKEN }}
+
+      - name: Deploy To Cluster
+        uses: ./.github/actions/deploy-to-cluster
+        with:
+          environment: ${{ inputs.overlay }}

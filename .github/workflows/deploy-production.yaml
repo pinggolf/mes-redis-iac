@@ -1,0 +1,117 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: 'Type "production" to confirm deployment to production'
+        required: true
+        type: string
+      regions:
+        description: 'Which regions to deploy to'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - US
+          - EU
+          - JP
+          - KR
+      tag:
+        description: 'Git tag/version to deploy (leave empty for latest)'
+        required: false
+        type: string
+
+jobs:
+
+  validate-confirmation:
+    name: Validate Production Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_production }}" != "production" ]; then
+            echo "❌ Production deployment not confirmed."
+            echo "You must type 'production' to confirm deployment."
+            exit 1
+          fi
+          echo "✅ Production deployment confirmed"
+
+  # Production US deployment
+  deploy-production-us:
+    name: Deploy Production US
+    if: ${{ github.event.inputs.regions == 'all' || github.event.inputs.regions == 'US' }}
+    uses: ./.github/workflows/deploy-environment.yaml
+    needs: validate-confirmation
+    secrets: inherit
+    with:
+      environment: Production-US
+      region: US
+      overlay: production
+
+  # Production EU deployment
+  deploy-production-eu:
+    name: Deploy Production EU
+    if: ${{ github.event.inputs.regions == 'all' || github.event.inputs.regions == 'EU' }}
+    uses: ./.github/workflows/deploy-environment.yaml
+    needs: validate-confirmation
+    secrets: inherit
+    with:
+      environment: Production-EU
+      region: EU
+      overlay: production
+
+  # Production JP deployment
+  deploy-production-jp:
+    name: Deploy Production JP
+    if: ${{ github.event.inputs.regions == 'all' || github.event.inputs.regions == 'JP' }}
+    uses: ./.github/workflows/deploy-environment.yaml
+    needs: validate-confirmation
+    secrets: inherit
+    with:
+      environment: Production-JP
+      region: JP
+      overlay: production
+
+  # Production KR deployment
+  deploy-production-kr:
+    name: Deploy Production KR
+    if: ${{ github.event.inputs.regions == 'all' || github.event.inputs.regions == 'KR' }}
+    uses: ./.github/workflows/deploy-environment.yaml
+    needs: validate-confirmation
+    secrets: inherit
+    with:
+      environment: Production-KR
+      region: KR
+      overlay: production
+
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-production-us, deploy-production-eu, deploy-production-jp, deploy-production-kr]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🚀 Production Deployment Summary"
+          echo ""
+          echo "### Deployment Details:"
+          echo "- **Triggered by:** ${{ github.actor }}"
+          echo "- **Regions:** ${{ github.event.inputs.regions }}"
+          echo "- **Tag/Version:** ${{ github.event.inputs.tag || 'latest' }}"
+          echo "- **Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "### Region Status:"
+          if [ "${{ needs.deploy-production-us.result }}" != "skipped" ]; then
+            echo "- **US:** ${{ needs.deploy-production-us.result == 'success' && '✅ Success' || '❌ Failed' }}"
+          fi
+          if [ "${{ needs.deploy-production-eu.result }}" != "skipped" ]; then
+            echo "- **EU:** ${{ needs.deploy-production-eu.result == 'success' && '✅ Success' || '❌ Failed' }}"
+          fi
+          if [ "${{ needs.deploy-production-jp.result }}" != "skipped" ]; then
+            echo "- **JP:** ${{ needs.deploy-production-jp.result == 'success' && '✅ Success' || '❌ Failed' }}"
+          fi
+          if [ "${{ needs.deploy-production-kr.result }}" != "skipped" ]; then
+            echo "- **KR:** ${{ needs.deploy-production-kr.result == 'success' && '✅ Success' || '❌ Failed' }}"
+          fi

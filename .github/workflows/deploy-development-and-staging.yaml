@@ -1,0 +1,59 @@
+name: Deploy Development and Staging
+
+on:
+  push:
+    tags:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+
+  deploy-dev-environment:
+    name: Deploy Development Environment
+    uses: ./.github/workflows/deploy-environment.yaml
+    secrets: inherit
+    with:
+      environment: Development
+      region: DEV
+      overlay: development
+
+  # Staging deployments (parallel)
+  deploy-staging-us:
+    name: Deploy Staging US
+    uses: ./.github/workflows/deploy-environment.yaml
+    secrets: inherit
+    needs: deploy-dev-environment
+    with:
+      environment: Staging-US
+      region: US
+      overlay: staging
+
+  deploy-staging-eu:
+    name: Deploy Staging EU
+    uses: ./.github/workflows/deploy-environment.yaml
+    secrets: inherit
+    needs: deploy-dev-environment
+    with:
+      environment: Staging-EU
+      region: EU
+      overlay: staging
+
+  deploy-staging-jp:
+    name: Deploy Staging JP
+    uses: ./.github/workflows/deploy-environment.yaml
+    secrets: inherit
+    needs: deploy-dev-environment
+    with:
+      environment: Staging-JP
+      region: JP
+      overlay: staging
+
+  deploy-staging-kr:
+    name: Deploy Staging KR
+    uses: ./.github/workflows/deploy-environment.yaml
+    secrets: inherit
+    needs: deploy-dev-environment
+    with:
+      environment: Staging-KR
+      region: KR
+      overlay: staging
