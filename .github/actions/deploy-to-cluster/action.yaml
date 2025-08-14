@@ -183,10 +183,21 @@ runs:
           exit 1
         fi
         
+        # Debug: Show what will be applied
+        echo "Preview of resources to be created:"
+        kubectl kustomize ${{ env.KUSTOMIZE_DIR }} | kubectl apply --dry-run=client -f - -n ${{ env.NAMESPACE }}
+        
         # Apply Kustomize configuration
+        echo ""
+        echo "Applying Kustomize configuration..."
         kubectl apply -k ${{ env.KUSTOMIZE_DIR }} --namespace=${{ env.NAMESPACE }}
         
         echo "Redis deployment initiated"
+        
+        # Show deployed resources
+        echo ""
+        echo "Deployed resources:"
+        kubectl get all -n ${{ env.NAMESPACE }} -l app=redis
 
     - name: Wait for Redis to be Ready
       shell: bash
@@ -194,42 +205,91 @@ runs:
         echo ""
         echo "Waiting for Redis StatefulSet to be ready..."
         
-        # Wait for StatefulSet to be ready
-        kubectl wait --namespace=${{ env.NAMESPACE }} \
-          --for=condition=ready pod \
-          --selector=app=redis \
-          --timeout=300s || {
-          echo "Warning: Redis pod did not become ready in time"
-          echo "Check pod status with: kubectl get pods -n ${{ env.NAMESPACE }}"
+        # Show initial status
+        echo "Current StatefulSet status:"
+        kubectl get statefulset redis -n ${{ env.NAMESPACE }}
+        
+        # Wait for StatefulSet rollout to complete
+        echo ""
+        echo "Waiting for StatefulSet rollout..."
+        kubectl rollout status statefulset/redis -n ${{ env.NAMESPACE }} --timeout=300s || {
+          echo ""
+          echo "ERROR: StatefulSet did not become ready in time"
+          echo ""
+          echo "Pod status:"
+          kubectl get pods -n ${{ env.NAMESPACE }} -l app=redis
+          echo ""
+          echo "Pod details:"
           kubectl describe pod -l app=redis -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "Recent events:"
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' | tail -20
           exit 1
         }
         
-        echo "Redis is ready!"
+        # Additional verification - wait for pod to be ready
+        echo ""
+        echo "Verifying pod readiness..."
+        kubectl wait --namespace=${{ env.NAMESPACE }} \
+          --for=condition=ready pod \
+          --selector=app=redis \
+          --timeout=60s || {
+          echo "Warning: Pod ready check failed, but StatefulSet is ready"
+        }
+        
+        echo ""
+        echo "✅ Redis is ready!"
 
     - name: Verify Redis Deployment
       shell: bash
       run: |
         echo ""
+        echo "======================================"
         echo "Verifying Redis deployment..."
+        echo "======================================"
         echo ""
         
         # Check StatefulSet status
+        echo "📊 StatefulSet Status:"
         kubectl get statefulset redis -n ${{ env.NAMESPACE }}
+        echo ""
         
         # Check pods
-        kubectl get pods -l app=redis -n ${{ env.NAMESPACE }}
-        
-        # Check service
-        kubectl get service redis-cluster -n ${{ env.NAMESPACE }}
-        
-        # Test Redis connection (if possible)
+        echo "🔷 Pod Status:"
+        kubectl get pods -l app=redis -n ${{ env.NAMESPACE }} -o wide
         echo ""
-        echo "Testing Redis connection..."
-        kubectl exec -n ${{ env.NAMESPACE }} redis-0 -- redis-cli -a "${{ env.REDIS_PASSWORD }}" ping || {
-          echo "Warning: Could not verify Redis connection"
+        
+        # Check services
+        echo "🌐 Services:"
+        kubectl get service -l app=redis -n ${{ env.NAMESPACE }}
+        echo ""
+        
+        # Check PVCs
+        echo "💾 Persistent Volume Claims:"
+        kubectl get pvc -n ${{ env.NAMESPACE }} -l app=redis
+        echo ""
+        
+        # Test Redis connection
+        echo "🔗 Testing Redis connection..."
+        kubectl exec -n ${{ env.NAMESPACE }} redis-0 -- redis-cli -a "${{ env.REDIS_PASSWORD }}" ping && {
+          echo "✅ Redis connection successful!"
+          
+          # Get Redis info
+          echo ""
+          echo "📝 Redis Server Info:"
+          kubectl exec -n ${{ env.NAMESPACE }} redis-0 -- redis-cli -a "${{ env.REDIS_PASSWORD }}" INFO server | grep -E "redis_version|redis_mode|uptime_in_seconds"
+        } || {
+          echo "⚠️ Warning: Could not verify Redis connection"
+          echo "This might be expected if the pod is still initializing"
         }
         
         echo ""
-        echo "Redis deployment completed successfully!"
-        echo "Connection string: redis-cluster.${{ env.NAMESPACE }}.svc.cluster.local:6379"
+        echo "======================================"
+        echo "✅ Redis deployment completed!"
+        echo "======================================"
+        echo ""
+        echo "📌 Connection Details:"
+        echo "  Host: redis-cluster.${{ env.NAMESPACE }}.svc.cluster.local"
+        echo "  Port: 6379"
+        echo "  Password: Stored in redis-secret"
+        echo ""
