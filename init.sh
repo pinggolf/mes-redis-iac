@@ -24,7 +24,9 @@ echo "Environment: $ENVIRONMENT"
 echo "Namespace: $NAMESPACE"
 echo ""
 
-# Namespace will be created by deploy.sh if needed
+# Create namespace if it doesn't exist
+echo "Ensuring namespace $NAMESPACE exists..."
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
 # Generate a secure password for Redis if not provided
 if [ -z "$REDIS_PASSWORD" ]; then

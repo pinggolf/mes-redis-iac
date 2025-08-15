@@ -23,6 +23,10 @@ if [ ! -d "manifests/overlays/$ENVIRONMENT" ]; then
     exit 1
 fi
 
+# Create namespace if it doesn't exist
+echo "Ensuring namespace $NAMESPACE exists..."
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+
 # Check if Kustomize is available
 if command -v kustomize &> /dev/null; then
     echo "Using standalone Kustomize..."
