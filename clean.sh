@@ -7,7 +7,8 @@ set -e
 
 # Configuration
 ENVIRONMENT="${ENVIRONMENT:-localdev}"
-NAMESPACE="${NAMESPACE:-mes-${ENVIRONMENT}}"
+# Use NAMESPACE env var if set, otherwise default to mes
+NAMESPACE="${NAMESPACE:-mes}"
 
 echo "========================================="
 echo "MES Redis Infrastructure Cleanup"

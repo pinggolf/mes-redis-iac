@@ -14,7 +14,8 @@ kubectl config use-context docker-desktop || {
 
 # Set default environment
 ENVIRONMENT="${ENVIRONMENT:-localdev}"
-NAMESPACE="mes-${ENVIRONMENT}"
+# Use NAMESPACE env var if set, otherwise default to mes
+NAMESPACE="${NAMESPACE:-mes}"
 
 echo "========================================="
 echo "MES Redis Infrastructure Deployment"
