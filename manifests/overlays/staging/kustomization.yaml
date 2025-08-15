@@ -4,7 +4,7 @@ kind: Kustomization
 resources:
   - ../../base
 
-namespace: mes-staging
+# Namespace is set dynamically via kubectl -n flag
 
 labels:
 - pairs:

@@ -25,8 +25,8 @@ else
 fi
 
 # Delete the Kubernetes resources
-echo "Removing Redis deployment..."
-$KUSTOMIZE_CMD "manifests/overlays/$ENVIRONMENT" | kubectl delete -f - --ignore-not-found=true || {
+echo "Removing Redis deployment from namespace $NAMESPACE..."
+$KUSTOMIZE_CMD "manifests/overlays/$ENVIRONMENT" | kubectl delete -n $NAMESPACE -f - --ignore-not-found=true || {
     echo "Warning: Some resources may not have been deleted"
 }
 

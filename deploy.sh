@@ -36,12 +36,12 @@ else
     KUSTOMIZE_CMD="kubectl kustomize"
 fi
 
-# Apply the Kubernetes manifests
-echo "Applying manifests for $ENVIRONMENT environment..."
-$KUSTOMIZE_CMD "manifests/overlays/$ENVIRONMENT" | kubectl apply -f - --overwrite=true || {
+# Apply the Kubernetes manifests with namespace
+echo "Applying manifests for $ENVIRONMENT environment in namespace $NAMESPACE..."
+$KUSTOMIZE_CMD "manifests/overlays/$ENVIRONMENT" | kubectl apply -n $NAMESPACE -f - --overwrite=true || {
     echo "Error: Failed to apply Kubernetes manifests"
     echo "Attempting to debug..."
-    $KUSTOMIZE_CMD "manifests/overlays/$ENVIRONMENT" | kubectl apply -f - --dry-run=client --validate=true
+    $KUSTOMIZE_CMD "manifests/overlays/$ENVIRONMENT" | kubectl apply -n $NAMESPACE -f - --dry-run=client --validate=true
     exit 1
 }
 
